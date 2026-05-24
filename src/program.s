@@ -1,7 +1,9 @@
 ; Tokenize/LIST scratch — aliases on FP scratch zp slots.
 ; TEMP3 (2 bytes) and TEMP2 (1 byte) are FP-only (float.s, trig.s),
-; never touched during PARSE_INPUT_LINE or LIST. TEMP1 is reserved
-; for lsav_load_chrin's per-line counter and must NOT be aliased.
+; never touched during PARSE_INPUT_LINE or LIST. TEMP1 is shared
+; among mutually-exclusive users (lsav_load_chrin's per-line
+; counter, chrout_buf's INBUF offset during tab completion, FP
+; scratch via TEMP1X) — see extra.s for the inbuf_off alias.
 TOKBASE       = TEMP3
 TOKBASE_TOKEN = TEMP2
 
@@ -69,6 +71,11 @@ RESTART:
         lda     #<QT_OK
         ldy     #>QT_OK
         jsr     STROUT
+        jsr     chrout_vec_reset        ; disarms LIST's --More-- pager AFTER
+                                        ; QT_OK so its CR LFs are counted
+                                        ; (rather than scrolling unwatched).
+                                        ; Idempotent when the pager wasn't
+                                        ; armed (non-LIST RESTART paths).
 L2351:
         jsr     INLIN
         stx     TXTPTR
@@ -357,10 +364,19 @@ L24C8:
         beq     L24AC
         cmp     ENDCHR
         beq     L24AC
+        cmp     #$20                    ; silently drop control chars
+        bcc     :+                      ; ($01..$1F) inside string/REM
+                                        ; literals: the LIST --More--
+                                        ; pager assumes ASCII-clean
+                                        ; output, and there is no
+                                        ; legitimate reason for a
+                                        ; tokenized program to carry
+                                        ; raw control bytes through a
+                                        ; SAVE/LOAD roundtrip.
 L24D0:
         iny
         sta     __INBUF_START__-5,y
-        inx
+:       inx
         bne     L24C8
 ; ----------------------------------------------------------------------------
 ; ADVANCE POINTER TO NEXT TOKEN NAME
@@ -397,7 +413,9 @@ L24DB:
         sta     TOKBASE_TOKEN
         ldy     #$00            ; index at bin B's first keyword
         stz     EOLPNTR
-        bra     L2498
+        jmp     L2498           ; out of bra range after the L24C8 ctrl-char
+                                ; filter added 4 bytes upstream
+
 @no_match:
         lda     __INBUF_START__,x
         bpl     L24AA
@@ -409,6 +427,15 @@ L24DB:
         lda     #$7F
         bra     L24AA
 ; ---END OF LINE — reached via L24AC's beq when a $00 has been stored.
+; The line terminator is in place at INBUF[Y-5]. Also stamp a $00 at
+; INBUF[Y-3] (A=0 on the beq path): NEWSTT's direct-mode lookahead
+; reads (TXTPTR),2 as the synthetic "next-line link high" byte and
+; needs to see $00 to fall back to RESTART. Without this store,
+; residual input bytes left in INBUF (e.g. 'T' at INBUF[3] after
+; "LIST" is tokenized to 2 bytes) drive NEWSTT into a phantom-line
+; path that SYNERRs with a garbage CURLIN.
+; INBUF is page-aligned (assert in defines.s), so <(INBUF-1)=$FF wraps
+; and we compensate with dec TXTPTR+1.
 L24EA:
         sta     __INBUF_START__-3,y
         dec     TXTPTR+1
@@ -547,6 +574,20 @@ L2598:
         sta     LINNUM
         sta     LINNUM+1
 L25A6:
+        jsr     pager_arm               ; arms --More-- (gates on direct mode,
+                                        ; no CMD redirect, out_fd == tty,
+                                        ; terminal dims). Placed
+                                        ; AFTER LIST's arg-dispatch so it
+                                        ; doesn't clobber the carry/zero flags
+                                        ; that bcc/beq L2581 above need, and
+                                        ; placed BEFORE L25A6X (a separate
+                                        ; entry) so tab completion's direct
+                                        ; jsr L25A6X bypasses the arm and keeps
+                                        ; chrout_vec pointed at chrout_buf.
+                                        ; Matching disarm: chrout_vec_reset
+                                        ; at RESTART (after QT_OK), so the
+                                        ; trailing CR/LF still flow through
+                                        ; the pager's row counter.
 L25A6X:
         ldy     #$01
         lda     (LOWTRX),y
@@ -590,7 +631,9 @@ L25CE:
         lda     (LOWTRX),y
         stx     LOWTRX
         sta     LOWTRX+1
-        bne     L25A6
+        bne     L25A6X                  ; per-line loop top; skip pager_arm
+                                        ; which is one-shot per LIST and lives
+                                        ; in the L25A6 entry prologue.
 L25E5:
         rts
 L25E8:

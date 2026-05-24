@@ -39,6 +39,8 @@ FORPNT:        .res 2
 LASTOP:        .res 2
 TXPSV:         .res 2
 CPRTYP:        .res 1
+TEMP1:         .res 1
+TEMP2:         .res 1
 FNCNAM:
 TEMP3:         .res 2
 DSCPTR:        .res 3
@@ -46,10 +48,8 @@ DSCLEN:        .res 2
 JMPADRS      = DSCLEN + 1
 Z52:           .res 1
 ARGEXTENSION:  .res 1
-TEMP1:         .res 1
 HIGHDS:        .res 2
 HIGHTR:        .res 2
-TEMP2:         .res 1
 INDX:
 TMPEXP:        .res 1
 EXPON:         .res 1
@@ -75,7 +75,12 @@ out_fd:        .res 1   ; current output fd; tty_fd by default
 in_fd:         .res 1   ; current input fd; tty_fd by default
 lsav_fd:       .res 1   ; SAVE/LOAD active fd
 getln_vec:     .res 2   ; GETLN indirection; CHRIN by default, swapped by LOAD
-chrout_ptr:    .res 2   ; CHROUT target buffer; non-zero hi → buffer mode
+chrout_vec:    .res 2   ; CHROUT dispatch target: chrout_fd (default), chrout_buf
+                        ; (tab completion), or chrout_pager (LIST --More-- hook).
+more_height:   .res 1   ; LIST pager: terminal rows
+more_width:    .res 1   ; LIST pager: terminal cols
+more_rows_left:.res 1   ; LIST pager: rows of headroom before next --More--
+more_col:      .res 1   ; LIST pager: tracked column 0..more_width
 auto_run:      .res 1   ; cold-boot auto-load + RUN state machine
                         ;   0   = idle (normal LOAD)
                         ;   1   = auto-load mode (file read in progress)
