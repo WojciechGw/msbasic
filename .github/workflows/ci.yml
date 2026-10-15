@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v[0-9]*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -11,12 +12,8 @@ permissions:
   contents: read
 
 concurrency:
-  # The run for each commit to main is in a separate group. With one shared
-  # group, a third push cancels the second run while it waits, and that
-  # commit then gets no release and no failure. Pull request runs still
-  # cancel older runs.
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 jobs:
   basic:
@@ -35,40 +32,46 @@ jobs:
           echo "$HOME/.rp6502/cc65/bin" >> "$GITHUB_PATH"
 
       - name: Build
-        id: build
         run: |
           set -euo pipefail
           cmake --preset cc65/Release
           cmake --build --preset cc65/Release
-          # Written from inside the build folder, because a project fetching
-          # the ROM reads names without a folder.
-          ( cd build/cc65/release && sha256sum basic.rp6502 > SHA256SUMS )
-          echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
 
-      # Not zipped, so the download is the ROM file itself, as on a release.
+      # Not zipped, so the download is the ROM file itself.
       - uses: actions/upload-artifact@v7
-        if: github.ref != 'refs/heads/main'
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
         with:
           path: build/cc65/release/basic.rp6502
           archive: false
 
+      # SHA256SUMS lists bare file names, so it is written inside dist.
+      # The bare basic.rp6502 is for tools that fetch it by that name.
+      # Remove it at the end of 2026.
+      - name: Collect and checksum
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: dist
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          mkdir dist
+          zip -j "dist/msbasic-${v}.zip" build/cc65/release/basic.rp6502 README.md
+          cp build/cc65/release/basic.rp6502 dist/
+          ( cd dist && sha256sum "msbasic-${v}.zip" basic.rp6502 > SHA256SUMS )
+          cat dist/SHA256SUMS
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+
       - name: Publish the release
-        if: github.ref == 'refs/heads/main'
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v3
         with:
-          tag_name: build-${{ steps.build.outputs.sha }}
-          # Without this the tag is created on whatever the default branch
-          # points at when the release is published, not on what was built.
-          target_commitish: ${{ github.sha }}
-          name: Microsoft BASIC ${{ steps.build.outputs.sha }}
+          name: Microsoft BASIC ${{ steps.dist.outputs.version }}
           files: |
-            build/cc65/release/basic.rp6502
-            build/cc65/release/SHA256SUMS
+            dist/msbasic-${{ steps.dist.outputs.version }}.zip
+            dist/basic.rp6502
+            dist/SHA256SUMS
           fail_on_unmatched_files: true
           body: |
             Microsoft BASIC for the Picocomputer 6502, built with cc65.
 
-            INSTALL basic.rp6502, then HELP basic for usage.
-            INFO basic.rp6502 shows usage without installing.
-
-            https://picocomputer.github.io
+            May be used on a standalone RP6502-PICO or with the SDK:
+            https://picocomputer.github.io/sdk.html#basic-programs
