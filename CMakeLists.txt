@@ -14,13 +14,8 @@ set_target_properties(basic PROPERTIES
 target_sources(basic PRIVATE
     src/msbasic.s
 )
-rp6502_byproducts(basic
-    ${CMAKE_CURRENT_BINARY_DIR}/basic.00E8
-    ${CMAKE_CURRENT_BINARY_DIR}/basic.1000
-    ${CMAKE_CURRENT_BINARY_DIR}/basic.C000
-)
 rp6502_asset(basic help src/help.txt)
-rp6502_asset(basic RAM(0x00E8) ${CMAKE_CURRENT_BINARY_DIR}/basic.00E8)
-rp6502_asset(basic RAM(0x1000) ${CMAKE_CURRENT_BINARY_DIR}/basic.1000)
-rp6502_asset(basic RAM(0xC000) ${CMAKE_CURRENT_BINARY_DIR}/basic.C000)
+rp6502_byproduct(basic RAM(0x00E8) basic.00E8)
+rp6502_byproduct(basic RAM(0x1000) basic.1000)
+rp6502_byproduct(basic RAM(0xC000) basic.C000)
 rp6502_executable(basic RESET 0x1000)
