@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
+
+include(${CMAKE_CURRENT_LIST_DIR}/tools/rp6502.cmake)
 
 project(MSBASIC-RP6502 ASM)
-
-add_subdirectory(tools)
 
 add_executable(basic)
 target_link_options(basic PRIVATE
@@ -20,7 +20,7 @@ rp6502_byproducts(basic
     ${CMAKE_CURRENT_BINARY_DIR}/basic.C000
 )
 rp6502_asset(basic help src/help.txt)
-rp6502_asset(basic 0x00E8 ${CMAKE_CURRENT_BINARY_DIR}/basic.00E8)
-rp6502_asset(basic 0x1000 ${CMAKE_CURRENT_BINARY_DIR}/basic.1000)
-rp6502_asset(basic 0xC000 ${CMAKE_CURRENT_BINARY_DIR}/basic.C000)
+rp6502_asset(basic RAM(0x00E8) ${CMAKE_CURRENT_BINARY_DIR}/basic.00E8)
+rp6502_asset(basic RAM(0x1000) ${CMAKE_CURRENT_BINARY_DIR}/basic.1000)
+rp6502_asset(basic RAM(0xC000) ${CMAKE_CURRENT_BINARY_DIR}/basic.C000)
 rp6502_executable(basic RESET 0x1000)

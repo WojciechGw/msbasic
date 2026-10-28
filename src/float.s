@@ -236,6 +236,15 @@ INCREMENT_FAC_MANTISSA:
 RTS12:
         rts
 OVERFLOW:
+        ; Armed by INPUT around FIN (input.s L2B34): drop FIN's frames
+        ; and go to RESPERR, which asks again with ?REDO FROM START, or
+        ; raises ?FILE DATA when I/O is redirected (INPUT#, CMD).
+        ldx     input_fin_sp
+        beq     @error
+        txs
+        stz     input_fin_sp
+        jmp     RESPERR
+@error:
         ldx     #ERR_OVERFLOW
         jmp     ERROR
 

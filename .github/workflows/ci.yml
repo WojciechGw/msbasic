@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  basic:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+
+      # Steps run without a login shell, so the PATH line that the installer
+      # adds to the profile does not apply to them.
+      - name: Install cc65
+        run: |
+          set -euo pipefail
+          curl -fsSL https://raw.githubusercontent.com/picocomputer/.github/main/install/cc65.sh | sh
+          echo "$HOME/.rp6502/cc65/bin" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: |
+          set -euo pipefail
+          cmake --preset cc65/Release
+          cmake --build --preset cc65/Release
+
+      # Not zipped, so the download is the ROM file itself.
+      - uses: actions/upload-artifact@v7
+        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+        with:
+          path: build/cc65/release/basic.rp6502
+          archive: false
+
+      # SHA256SUMS lists bare file names, so it is written inside dist.
+      # The bare basic.rp6502 is for tools that fetch it by that name.
+      # Remove it at the end of 2026.
+      - name: Collect and checksum
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: dist
+        run: |
+          set -euo pipefail
+          v="${GITHUB_REF_NAME#v}"
+          mkdir dist
+          zip -j "dist/msbasic-${v}.zip" build/cc65/release/basic.rp6502 README.md
+          cp build/cc65/release/basic.rp6502 dist/
+          ( cd dist && sha256sum "msbasic-${v}.zip" basic.rp6502 > SHA256SUMS )
+          cat dist/SHA256SUMS
+          echo "version=${v}" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          name: Microsoft BASIC ${{ steps.dist.outputs.version }}
+          files: |
+            dist/msbasic-${{ steps.dist.outputs.version }}.zip
+            dist/basic.rp6502
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
+          body: |
+            Microsoft BASIC for the Picocomputer 6502, built with cc65.
+
+            May be used on a standalone RP6502-PICO or with the SDK:
+            https://picocomputer.github.io/sdk.html#basic-programs
